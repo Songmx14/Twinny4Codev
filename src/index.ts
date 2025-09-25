@@ -327,6 +327,8 @@ export async function activate(context: ExtensionContext) {
       if (!changes) return
       const lastCompletion = completionProvider.lastCompletionText
       const isLastCompltionMultiline = getLineBreakCount(lastCompletion) > 1
+
+      // 原有用于抑制后续补全的判定（保持不变）
       completionProvider.setAcceptedLastCompletion(
         !!(
           changes.text &&
@@ -335,6 +337,20 @@ export async function activate(context: ExtensionContext) {
           isLastCompltionMultiline
         )
       )
+
+      // 新增：按你的要求，每次补全都记录前后缀 / 补全及是否被接受。
+      // 判定规则（按你选择的 A）：只要 changes.text === lastCompletion 就视为 accepted，
+      // 否则视为未接受并把用户实际输入传入记录方法。
+      try {
+        const accepted =
+          !!(changes.text && lastCompletion && changes.text === lastCompletion)
+        const userText = accepted ? undefined : changes.text || ""
+        // recordCompletionInteraction 不会抛异常（防守式实现）
+        ;(completionProvider as any).recordCompletionInteraction(accepted, userText)
+      } catch (e) {
+        console.error("Failed to record completion interaction", e)
+      }
+
       const currentLine = changes.range.start.line
       const currentCharacter = changes.range.start.character
       fileInteractionCache.incrementStrokes(currentLine, currentCharacter)

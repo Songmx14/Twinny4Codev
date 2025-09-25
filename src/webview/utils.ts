@@ -90,3 +90,8 @@ export const getThinkingMessage = (content: string): { thinking: string | null; 
   const message = content.replace(/<(?:think|thinking)>[\s\S]*?(?:<\/(?:think|thinking)>|$)/, "").trim();
   return { thinking, message };
 };
+
+// 全局替换 <answer> 和 </answer>
+export const cleanMessageContent = (content: string) => {
+  return content.replace(/<\/?answer>/g, ''); 
+};

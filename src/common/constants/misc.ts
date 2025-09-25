@@ -1,6 +1,6 @@
 import { ContextItem } from "../types"
 
-export const EXTENSION_NAME = "@ext:rjmacarthy.twinny"
+export const EXTENSION_NAME = "@ext:Songmx14.twinny-codev-r1"
 export const ASSISTANT = "assistant"
 export const USER = "user"
 export const TWINNY = "twinny"

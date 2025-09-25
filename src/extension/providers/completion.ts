@@ -1,5 +1,6 @@
 import AsyncLock from "async-lock"
 import fs from "fs"
+import os from "os"
 import ignore from "ignore"
 import path from "path"
 import {
@@ -696,6 +697,56 @@ export class CompletionProvider
   public setAcceptedLastCompletion(value: boolean) {
     this._acceptedLastCompletion = value
     this._lastCompletionMultiline = getLineBreakCount(this._completion) > 1
+  }
+
+  /**
+   * Record a completion interaction to a JSONL file at ~/.twinny/completions.jsonl.
+   * Each line is a JSON object containing:
+   * - timestamp: ISO string
+   * - accepted: boolean
+   * - prefix: string
+   * - suffix: string
+   * - rawCompletion: string (what the model streamed)
+   * - formattedCompletion: string (what was presented)
+   * - userText: optional string (what the user typed when not accepting)
+   * The function is defensive and will not throw; failures are logged.
+   */
+  public recordCompletionInteraction(accepted: boolean, userText?: string) {
+    try {
+      const homeDir = process.env.HOME || process.env.USERPROFILE || ""
+      if (!homeDir) return
+
+      const dir = path.join(homeDir, ".twinny")
+      const filePath = path.join(dir, "completions.jsonl")
+      try {
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true })
+        }
+      } catch (e) {
+        console.error("Failed to ensure ~/.twinny directory exists", e)
+      }
+
+      const entry = {
+        timestamp: new Date().toISOString(),
+        accepted,
+        prefix: this._prefixSuffix?.prefix || "",
+        suffix: this._prefixSuffix?.suffix || "",
+        rawCompletion: this._completion || "",
+        formattedCompletion: this.lastCompletionText || "",
+        userText: userText || ""
+      }
+
+      try {
+        fs.appendFileSync(filePath, `${JSON.stringify(entry)}\n`, {
+          encoding: "utf8",
+          mode: 0o600
+        })
+      } catch (e) {
+        console.error("Failed to write completion interaction", e)
+      }
+    } catch (e) {
+      console.error("Error recording completion interaction", e)
+    }
   }
 
   public abortCompletion() {

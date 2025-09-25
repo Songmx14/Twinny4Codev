@@ -18,6 +18,8 @@ import { createCustomImageExtension } from "./image-extension"
 import { MentionExtension } from "./mention-extention"
 import { useToast } from "./toast"
 import { getThinkingMessage } from "./utils"
+import { cleanMessageContent } from "./utils"
+
 
 import styles from "./styles/message.module.css"
 
@@ -415,8 +417,8 @@ export const Message: React.FC<MessageProps> = ({
   if (!message?.content) return null
 
   const { thinking, message: messageContent } = getThinkingMessage(
-    message.content as string
-  )
+    cleanMessageContent(message.content) // 去除codev-r1<answer></answer>标签
+  );
 
   const conversationLength = messages?.length || 0
 
