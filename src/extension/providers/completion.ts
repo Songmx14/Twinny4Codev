@@ -701,6 +701,14 @@ export class CompletionProvider
   }
 
   /**
+   * 返回上次由模型生成并展示的补全时间戳（毫秒），如果没有则返回 null。
+   * 供外部（例如 src/index.ts）判断补全是否“最近生成”以决定是否记录交互。
+   */
+  public getLastCompletionTimestamp(): number | null {
+    return this._lastCompletionTimestamp
+  }
+
+  /**
    * Record a completion interaction to a JSONL file at ~/.twinny/completions.jsonl.
    * Each line is a JSON object containing:
    * - timestamp: ISO string
@@ -786,6 +794,7 @@ export class CompletionProvider
     this._completion = ""
     this._statusBar.text = "$(code)"
     this.lastCompletionText = formattedCompletion
+    this._lastCompletionTimestamp = Date.now()
     this._lastCompletionMultiline = getLineBreakCount(this._completion) > 1
 
     return [
