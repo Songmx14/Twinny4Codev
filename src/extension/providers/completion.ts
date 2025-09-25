@@ -83,6 +83,7 @@ export class CompletionProvider
   private _fileInteractionCache: FileInteractionCache
   private _isMultilineCompletion = false
   private _lastCompletionMultiline = false
+  private _lastCompletionTimestamp: number | null = null
   private _lock: AsyncLock
   private _nodeAtPosition: SyntaxNode | null = null
   private _nonce = 0

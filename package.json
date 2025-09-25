@@ -1,7 +1,7 @@
 {
-  "name": "twinny-codev-r1",
-  "displayName": "Twinny CodeV R1",
-  "description": "Locally hosted AI code completion plugin (edited by Songmx14)",
+  "name": "twinny4codev",
+  "displayName": "Twinny for CodeV Serises",
+  "description": "Locally hosted AI code completion plugin for CodeV Serises(edited by Songmx14)",
   "version": "3.23.31",
   "icon": "assets/icon.png",
   "keywords": [
@@ -27,15 +27,15 @@
     "vscode-extension"
   ],
   "repository": {
-    "url": "https://github.com/Songmx14/Twinny-CodeV-R1.git"
+    "url": "https://github.com/Songmx14/Twinny4Codev.git"
   },
   "license": "MIT",
-  "publisher": "Songmx14",
+  "publisher": "twinny4codev",
   "engines": {
     "vscode": "^1.84.0"
   },
   "bugs": {
-    "url": "https://github.com/Songmx14/Twinny-CodeV-R1/issues"
+    "url": "https://github.com/Songmx14/Twinny4Codev/issues"
   },
   "categories": [
     "Programming Languages",

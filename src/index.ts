@@ -338,15 +338,25 @@ export async function activate(context: ExtensionContext) {
         )
       )
 
-      // 新增：按你的要求，每次补全都记录前后缀 / 补全及是否被接受。
-      // 判定规则（按你选择的 A）：只要 changes.text === lastCompletion 就视为 accepted，
-      // 否则视为未接受并把用户实际输入传入记录方法。
+      // 仅在真正触发补全并且模型已返回补全时记录交互：
+      // 使用 CompletionProvider 提供的时间戳判断补全是在最近生成的（5 秒内）
       try {
-        const accepted =
-          !!(changes.text && lastCompletion && changes.text === lastCompletion)
-        const userText = accepted ? undefined : changes.text || ""
-        // recordCompletionInteraction 不会抛异常（防守式实现）
-        ;(completionProvider as any).recordCompletionInteraction(accepted, userText)
+        const lastCompletionTs = (completionProvider as any).getLastCompletionTimestamp?.()
+        const now = Date.now()
+        const COMPLETION_WINDOW_MS = 5000
+        const completionRecentlyGenerated =
+          typeof lastCompletionTs === "number" &&
+          now - lastCompletionTs <= COMPLETION_WINDOW_MS
+
+        if (lastCompletion && completionRecentlyGenerated) {
+          const accepted =
+            !!(changes.text && lastCompletion && changes.text === lastCompletion)
+          const userText = accepted ? undefined : changes.text || ""
+          // 仅在确认是刚生成的补全时记录，recordCompletionInteraction 为防守式不会抛异常
+          ;(completionProvider as any).recordCompletionInteraction(accepted, userText)
+        } else {
+          // 未在补全生成窗口内，判定为普通编辑，不记录
+        }
       } catch (e) {
         console.error("Failed to record completion interaction", e)
       }
