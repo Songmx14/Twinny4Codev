@@ -792,15 +792,15 @@ export class CompletionProvider
     if (this.config.completionCacheEnabled)
       cache.setCache(this._prefixSuffix, formattedCompletion)
 
-    // 保存原始流式补全文本，供记录使用
-    this._lastRawCompletion = this._completion
-    // 在补全被触发（展示）时立即记录一次补全交互（未必已被接受）
-    try {
-      this.recordCompletionInteraction(false)
-    } catch (e) {
-      // defensive: recordCompletionInteraction 本身已做错误处理，但保留 try/catch 以防万一
-      console.error("Failed to record inline completion trigger", e)
-    }
+    // // 保存原始流式补全文本，供记录使用
+    // this._lastRawCompletion = this._completion
+    // // 在补全被触发（展示）时立即记录一次补全交互（未必已被接受）
+    // try {
+    //   this.recordCompletionInteraction(false)
+    // } catch (e) {
+    //   // defensive: recordCompletionInteraction 本身已做错误处理，但保留 try/catch 以防万一
+    //   console.error("Failed to record inline completion trigger", e)
+    // }
 
     this._completion = ""
     this._statusBar.text = "$(code)"
