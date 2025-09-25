@@ -325,6 +325,7 @@ export async function activate(context: ExtensionContext) {
     workspace.onDidChangeTextDocument((e) => {
       const changes = e.contentChanges[0]
       if (!changes) return
+
       const lastCompletion = completionProvider.lastCompletionText
       const isLastCompltionMultiline = getLineBreakCount(lastCompletion) > 1
 
@@ -338,6 +339,26 @@ export async function activate(context: ExtensionContext) {
         )
       )
 
+      // Only handle changes that occur in the same file where the last completion was generated.
+      // This prevents unrelated file opens/writes (e.g. opening ~/.twinny/completions.jsonl) from being recorded.
+      try {
+        const changedPath = e.document.uri.fsPath || ""
+        const completionDocPath = (completionProvider as any)._document?.fileName || ""
+        if (!changedPath || !completionDocPath || changedPath !== completionDocPath) {
+          // Not the same file where the completion was generated — ignore for recording purposes.
+          const currentLineSkip = changes.range.start.line
+          const currentCharacterSkip = changes.range.start.character
+          fileInteractionCache.incrementStrokes(currentLineSkip, currentCharacterSkip)
+          return
+        }
+      } catch (err) {
+        // If any error happens while checking paths, skip recording for safety.
+        const currentLineErr = changes.range.start.line
+        const currentCharacterErr = changes.range.start.character
+        fileInteractionCache.incrementStrokes(currentLineErr, currentCharacterErr)
+        return
+      }
+
       // 仅在真正触发补全并且模型已返回补全时记录交互：
       // 使用 CompletionProvider 提供的时间戳判断补全是在最近生成的（5 秒内）
       try {
@@ -349,10 +370,10 @@ export async function activate(context: ExtensionContext) {
           now - lastCompletionTs <= COMPLETION_WINDOW_MS
 
         if (lastCompletion && completionRecentlyGenerated) {
-          const accepted =
-            !!(changes.text && lastCompletion && changes.text === lastCompletion)
+          // We already validated the change occurs in the same file above.
+          // Determine accepted solely by text equality and time window.
+          const accepted = !!(changes.text && lastCompletion && changes.text === lastCompletion)
           const userText = accepted ? undefined : changes.text || ""
-          // 仅在确认是刚生成的补全时记录，recordCompletionInteraction 为防守式不会抛异常
           ;(completionProvider as any).recordCompletionInteraction(accepted, userText)
         } else {
           // 未在补全生成窗口内，判定为普通编辑，不记录
