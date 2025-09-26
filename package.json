@@ -2,8 +2,8 @@
   "name": "twinny4codev",
   "displayName": "Twinny for CodeV Serises",
   "description": "Locally hosted AI code completion plugin for CodeV Serises(edited from Twinny)",
-  "version": "0.0.2",
-  "icon": "assets/icon.png",
+  "version": "0.0.3",
+  "icon": "assets/logo.png",
   "keywords": [
     "code-inference",
     "code-suggestion",
