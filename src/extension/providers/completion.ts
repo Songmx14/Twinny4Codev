@@ -876,7 +876,7 @@ export class CompletionProvider
     // 同时去除末尾多余的换行符（一个或多个）
     const formattedCompletion = (() => {
       const s = this.removeStopWords(this._completion)
-      return s.replace(/\n+$/g, "")
+      return s.trimEnd()
     })()
 
     this.logCompletion(formattedCompletion)
