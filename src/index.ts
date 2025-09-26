@@ -79,6 +79,13 @@ export async function activate(context: ExtensionContext) {
     context
   )
 
+  // In-memory cache of recently-seen completionIds to avoid full-file scans on every change.
+  // This cache is populated when we write a new completion record from this activation session.
+  // Keep only a small bounded history to limit memory — maintain FIFO order with a queue + Set for O(1) membership checks.
+  const recentCompletionIdsSet = new Set<string>()
+  const recentCompletionIdsQueue: string[] = []
+  const MAX_RECENT_COMPLETION_IDS = 10
+
   templateProvider.init()
 
   context.subscriptions.push(
@@ -359,24 +366,63 @@ export async function activate(context: ExtensionContext) {
         return
       }
 
-      // 仅在真正触发补全并且模型已返回补全时记录交互：
-      // 使用 CompletionProvider 提供的时间戳判断补全是在最近生成的（5 秒内）
+      // 使用 provider.lastCompletionId（若存在）进行去重判断；不再依赖时间窗口。
       try {
-        const lastCompletionTs = (completionProvider as any).getLastCompletionTimestamp?.()
-        const now = Date.now()
-        const COMPLETION_WINDOW_MS = 5000
-        const completionRecentlyGenerated =
-          typeof lastCompletionTs === "number" &&
-          now - lastCompletionTs <= COMPLETION_WINDOW_MS
+        const completionId = (completionProvider as any).lastCompletionId as
+          | string
+          | undefined
 
-        if (lastCompletion && completionRecentlyGenerated) {
-          // We already validated the change occurs in the same file above.
-          // Determine accepted solely by text equality and time window.
-          const accepted = !!(changes.text && lastCompletion && changes.text === lastCompletion)
-          const userText = accepted ? undefined : changes.text || ""
-          ;(completionProvider as any).recordCompletionInteraction(accepted, userText)
+        if (completionId) {
+          // 若存在 completionId：先在文件中查找是否已有该 id 的记录；如果已存在直接 no-op。
+          try {
+            const home = os.homedir()
+          // const completionsPath = path.join(home, ".twinny", "completions.jsonl")
+            let found = false
+            // Only rely on in-memory cache for deduplication to avoid disk I/O.
+            // Under the linear-use assumption this is sufficient; duplicates across extension restarts
+            // are an acceptable trade-off for performance.
+            if (recentCompletionIdsSet.has(completionId)) {
+              found = true
+            }
+
+            if (found) {
+              // 已有记录，跳过
+            } else {
+              // 未找到记录：再计算 accepted 并写入一次记录
+              const accepted =
+                !!(changes.text && lastCompletion && changes.text === lastCompletion)
+              const userText = accepted ? undefined : changes.text || ""
+              if (typeof (completionProvider as any).recordCompletionInteraction === "function") {
+                ;(completionProvider as any).recordCompletionInteraction(accepted, userText, completionId)
+                // add to in-memory cache so subsequent quick events don't re-scan file
+                if (!recentCompletionIdsSet.has(completionId)) {
+                  recentCompletionIdsSet.add(completionId)
+                  recentCompletionIdsQueue.push(completionId)
+                  // enforce max size (evict oldest)
+                  if (recentCompletionIdsQueue.length > MAX_RECENT_COMPLETION_IDS) {
+                    const oldest = recentCompletionIdsQueue.shift()
+                    if (oldest) recentCompletionIdsSet.delete(oldest)
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.error("Failed to inspect/write completion interaction for completionId", e)
+            // 保守写入，避免丢失数据：计算 accepted 并写入
+            try {
+              const accepted =
+                !!(changes.text && lastCompletion && changes.text === lastCompletion)
+              const userText = accepted ? undefined : changes.text || ""
+              if (typeof (completionProvider as any).recordCompletionInteraction === "function") {
+                ;(completionProvider as any).recordCompletionInteraction(accepted, userText, completionId)
+              }
+            } catch (e2) {
+              console.error("Failed to fallback record completion interaction", e2)
+            }
+          }
         } else {
-          // 未在补全生成窗口内，判定为普通编辑，不记录
+          // No completionId available — do not record. We only record interactions tied to a provider-generated completionId.
+          // This avoids recording unrelated user edits and reduces noise in completions.jsonl.
         }
       } catch (e) {
         console.error("Failed to record completion interaction", e)

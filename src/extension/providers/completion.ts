@@ -96,6 +96,8 @@ export class CompletionProvider
   private _templateProvider: TemplateProvider
   private _usingFimTemplate = false
   public lastCompletionText = ""
+  // Optional id of the last completion written by provider; used by index.ts to reference the same record.
+  public lastCompletionId?: string
 
   constructor(
     statusBar: StatusBarItem,
@@ -721,7 +723,7 @@ export class CompletionProvider
    * - userText: optional string (what the user typed when not accepting)
    * The function is defensive and will not throw; failures are logged.
    */
-  public recordCompletionInteraction(accepted: boolean, userText?: string) {
+  public recordCompletionInteraction(accepted: boolean, userText?: string, completionId?: string) {
     try {
       const homeDir = process.env.HOME || process.env.USERPROFILE || ""
       if (!homeDir) return
@@ -737,7 +739,9 @@ export class CompletionProvider
       }
 
       const entry = {
-        timestamp: new Date().toISOString(),
+        // Use completionId as the primary identifier. Omit timestamp to reduce noise;
+        // if a timestamp is required it can be derived from the file modification time or added later.
+        completionId: completionId || undefined,
         accepted,
         prefix: this._prefixSuffix?.prefix || "",
         suffix: this._prefixSuffix?.suffix || "",
@@ -746,13 +750,98 @@ export class CompletionProvider
         userText: userText || ""
       }
 
+      // Simplified merge strategy:
+      // 1) If completionId is provided, search backwards for a matching id and merge into that entry (any time).
+      // 2) If no completionId or no matching id found, append a new entry (no time-window required).
       try {
-        fs.appendFileSync(filePath, `${JSON.stringify(entry)}\n`, {
-          encoding: "utf8",
-          mode: 0o600
-        })
+        if (fs.existsSync(filePath)) {
+          const all = fs.readFileSync(filePath, { encoding: "utf8" })
+          const lines = all.split(/\r?\n/).filter((l: string) => l.trim().length > 0)
+          if (completionId && lines.length > 0) {
+            for (let i = lines.length - 1; i >= 0; i--) {
+              try {
+                const obj = JSON.parse(lines[i])
+                if (obj && obj.completionId === completionId) {
+                  obj.accepted = obj.accepted || entry.accepted
+                  obj.formattedCompletion = entry.formattedCompletion || obj.formattedCompletion
+                  obj.rawCompletion = entry.rawCompletion || obj.rawCompletion
+                  obj.userText = entry.userText || obj.userText
+                  lines[i] = JSON.stringify(obj)
+
+                  // Atomic overwrite: write to temp file then rename
+                  try {
+                    const tmpPath = `${filePath}.tmp`
+                    fs.writeFileSync(tmpPath, lines.join("\n") + "\n", {
+                      encoding: "utf8",
+                      mode: 0o600
+                    })
+                    fs.renameSync(tmpPath, filePath)
+                    logger.log(`Merged completion interaction for id=${completionId}`)
+                  } catch (writeErr) {
+                    console.error("Failed to atomically write merged completion interaction", writeErr)
+                    // best-effort: fallback to non-atomic write
+                    try {
+                      fs.writeFileSync(filePath, lines.join("\n") + "\n", {
+                        encoding: "utf8",
+                        mode: 0o600
+                      })
+                    } catch (e3) {
+                      console.error("Failed to write completion interaction after atomic write failure", e3)
+                    }
+                  }
+
+                  return
+                }
+              } catch {
+                // ignore per-line parse errors
+              }
+            }
+          }
+
+          // No matching id found or no id provided: append a fresh entry
+          try {
+            logger.log(`Appending new completion interaction id=${completionId || "undefined"} (append)`)
+            fs.appendFileSync(filePath, `${JSON.stringify(entry)}\n`, {
+              encoding: "utf8",
+              mode: 0o600
+            })
+          } catch (e) {
+            console.error("Failed to append completion interaction", e)
+          }
+        } else {
+          // File doesn't exist yet: create and append (atomic create)
+          try {
+            const tmpPath = `${filePath}.tmp`
+            fs.writeFileSync(tmpPath, `${JSON.stringify(entry)}\n`, {
+              encoding: "utf8",
+              mode: 0o600
+            })
+            fs.renameSync(tmpPath, filePath)
+            logger.log(`Created completions.jsonl and wrote entry id=${completionId || "undefined"}`)
+          } catch (e) {
+            console.error("Failed to write completion interaction (create)", e)
+            // fallback to appendFileSync
+            try {
+              fs.appendFileSync(filePath, `${JSON.stringify(entry)}\n`, {
+                encoding: "utf8",
+                mode: 0o600
+              })
+            } catch (e2) {
+              console.error("Failed to write completion interaction (fallback)", e2)
+            }
+          }
+        }
       } catch (e) {
-        console.error("Failed to write completion interaction", e)
+        console.error("Failed to inspect/update completions.jsonl", e)
+        // Fallback: append
+        try {
+          fs.appendFileSync(filePath, `${JSON.stringify(entry)}\n`, {
+            encoding: "utf8",
+            mode: 0o600
+          })
+        } catch (e2) {
+          console.error("Failed to write completion interaction (fallback)", e2)
+        }
       }
     } catch (e) {
       console.error("Error recording completion interaction", e)
@@ -792,15 +881,24 @@ export class CompletionProvider
     if (this.config.completionCacheEnabled)
       cache.setCache(this._prefixSuffix, formattedCompletion)
 
-    // // 保存原始流式补全文本，供记录使用
-    // this._lastRawCompletion = this._completion
-    // // 在补全被触发（展示）时立即记录一次补全交互（未必已被接受）
-    // try {
-    //   this.recordCompletionInteraction(false)
-    // } catch (e) {
-    //   // defensive: recordCompletionInteraction 本身已做错误处理，但保留 try/catch 以防万一
-    //   console.error("Failed to record inline completion trigger", e)
-    // }
+    // 保存原始流式补全文本，供记录使用，并在展示时写入一次触发记录（accepted = false）。
+    // 这里为每次触发生成唯一 completionId 并将其写入文件，这样 index.ts 可以通过 id 精确更新记录。
+    this._lastRawCompletion = this._completion
+    try {
+      // Generate a timestamp-based completionId with random suffix to avoid millisecond collisions.
+      const completionId = `${Date.now()}-${Math.floor(Math.random() * 1000000)}`
+      this.lastCompletionId = completionId
+
+      // Immediately record a trigger entry (accepted = false) so the display event is not lost.
+      // recordCompletionInteraction is defensive and will handle any I/O errors.
+      try {
+        this.recordCompletionInteraction(false, undefined, completionId)
+      } catch (e) {
+        console.error("Failed to record inline completion trigger", e)
+      }
+    } catch (e) {
+      console.error("Failed to generate inline completion id", e)
+    }
 
     this._completion = ""
     this._statusBar.text = "$(code)"
