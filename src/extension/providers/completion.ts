@@ -872,9 +872,8 @@ export class CompletionProvider
 
     if (!editor || !this._position) return []
 
-    const formattedCompletion = new CompletionFormatter(editor).format(
-      this.removeStopWords(this._completion)
-    )
+    // 保留原输出，不作format处理
+    const formattedCompletion = this.removeStopWords(this._completion)
 
     this.logCompletion(formattedCompletion)
 
